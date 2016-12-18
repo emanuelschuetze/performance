@@ -41,13 +41,24 @@ func main() {
 	// Parse command line args
 	host := flag.String("host", "localhost", "Host of OpenSlides daphne server")
 	port := flag.Int("port", 8000, "Port of OpenSlides daphne server")
+	projector := flag.Int(
+		"projector",
+		0,
+		"ID of the projector you want to connect to. Default is 0 to connect "+
+			"to site instead of projector.")
 	flag.Parse()
 
 	// Connect to server via websocket
-	url := fmt.Sprintf("ws://%s:%d/ws/site/", *host, *port)
+	var path string
+	if *projector == 0 {
+		path = "/ws/site/"
+	} else {
+		path = fmt.Sprintf("/ws/projector/%d/", *projector)
+	}
+	url := fmt.Sprintf("ws://%s:%d%s", *host, *port, path)
 	receiveChannel := make(chan bool, wsClientCount)
 	wsOpenChannel := make(chan bool, wsClientCount)
-	fmt.Printf("Try to connect to %s ... ", url)
+	fmt.Printf("Try to connect to %s\n", url)
 	for i := 0; i < wsClientCount; i++ {
 		go connectToWebsocket(url, receiveChannel, wsOpenChannel)
 	}
@@ -64,7 +75,7 @@ func main() {
 		case <-wsOpenChannel:
 			wsOpenCounter++
 			if wsOpenCounter >= wsClientCount {
-				fmt.Println("done.")
+				fmt.Println("Connections established.")
 			}
 		case <-receiveChannel:
 			receiveCounter++
