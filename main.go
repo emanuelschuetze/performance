@@ -10,9 +10,6 @@ import (
 )
 
 const (
-	// Number of websocket clients that connect to the server
-	wsClientCount = 500
-
 	// The timer in milliseconds after witch the status is shown
 	showTimer = 100
 )
@@ -46,6 +43,7 @@ func main() {
 		0,
 		"ID of the projector you want to connect to. Default is 0 to connect "+
 			"to site instead of projector.")
+	numberOfWSClients := flag.Int("clients", 500, "Number of clients that should connect to server")
 	flag.Parse()
 
 	// Connect to server via websocket
@@ -56,10 +54,10 @@ func main() {
 		path = fmt.Sprintf("/ws/projector/%d/", *projector)
 	}
 	url := fmt.Sprintf("ws://%s:%d%s", *host, *port, path)
-	receiveChannel := make(chan bool, wsClientCount)
-	wsOpenChannel := make(chan bool, wsClientCount)
-	fmt.Printf("Try to connect to %s\n", url)
-	for i := 0; i < wsClientCount; i++ {
+	receiveChannel := make(chan bool, *numberOfWSClients)
+	wsOpenChannel := make(chan bool, *numberOfWSClients)
+	fmt.Printf("Try to connect %d clients to %s\n", *numberOfWSClients, url)
+	for i := 0; i < *numberOfWSClients; i++ {
 		go connectToWebsocket(url, receiveChannel, wsOpenChannel)
 	}
 
@@ -74,7 +72,7 @@ func main() {
 		select {
 		case <-wsOpenChannel:
 			wsOpenCounter++
-			if wsOpenCounter >= wsClientCount {
+			if wsOpenCounter >= *numberOfWSClients {
 				fmt.Println("Connections established.")
 			}
 		case <-receiveChannel:
