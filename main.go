@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"time"
@@ -9,18 +10,12 @@ import (
 )
 
 const (
-	// URL of the websocket server
-	url = "ws://localhost:8000/ws/site/"
-
-	// Number of websocket clients that connect to the server
-	wsClientCount = 500
-
 	// The timer in milliseconds after witch the status is shown
 	showTimer = 100
 )
 
 // Connects to the websocket url
-func connectToWebsocket(receiveChannel chan bool, wsOpenChannel chan bool) {
+func connectToWebsocket(url string, receiveChannel chan bool, wsOpenChannel chan bool) {
 	ws, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		log.Fatal("websocket error:", err)
@@ -40,10 +35,30 @@ func connectToWebsocket(receiveChannel chan bool, wsOpenChannel chan bool) {
 
 // Creates a lot of websocket connections to the server
 func main() {
-	receiveChannel := make(chan bool, wsClientCount)
-	wsOpenChannel := make(chan bool, wsClientCount)
-	for i := 0; i < wsClientCount; i++ {
-		go connectToWebsocket(receiveChannel, wsOpenChannel)
+	// Parse command line args
+	host := flag.String("host", "localhost", "Host of OpenSlides daphne server")
+	port := flag.Int("port", 8000, "Port of OpenSlides daphne server")
+	projector := flag.Int(
+		"projector",
+		0,
+		"ID of the projector you want to connect to. Default is 0 to connect "+
+			"to site instead of projector.")
+	numberOfWSClients := flag.Int("clients", 500, "Number of clients that should connect to server")
+	flag.Parse()
+
+	// Connect to server via websocket
+	var path string
+	if *projector == 0 {
+		path = "/ws/site/"
+	} else {
+		path = fmt.Sprintf("/ws/projector/%d/", *projector)
+	}
+	url := fmt.Sprintf("ws://%s:%d%s", *host, *port, path)
+	receiveChannel := make(chan bool, *numberOfWSClients)
+	wsOpenChannel := make(chan bool, *numberOfWSClients)
+	fmt.Printf("Try to connect %d clients to %s\n", *numberOfWSClients, url)
+	for i := 0; i < *numberOfWSClients; i++ {
+		go connectToWebsocket(url, receiveChannel, wsOpenChannel)
 	}
 
 	wsOpenCounter := 0
@@ -57,8 +72,8 @@ func main() {
 		select {
 		case <-wsOpenChannel:
 			wsOpenCounter++
-			if wsOpenCounter >= wsClientCount {
-				fmt.Println("All clients are connected")
+			if wsOpenCounter >= *numberOfWSClients {
+				fmt.Println("Connections established.")
 			}
 		case <-receiveChannel:
 			receiveCounter++
