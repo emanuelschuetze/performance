@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"time"
@@ -9,9 +10,6 @@ import (
 )
 
 const (
-	// URL of the websocket server
-	url = "ws://localhost:8000/ws/site/"
-
 	// Number of websocket clients that connect to the server
 	wsClientCount = 500
 
@@ -20,7 +18,7 @@ const (
 )
 
 // Connects to the websocket url
-func connectToWebsocket(receiveChannel chan bool, wsOpenChannel chan bool) {
+func connectToWebsocket(url string, receiveChannel chan bool, wsOpenChannel chan bool) {
 	ws, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		log.Fatal("websocket error:", err)
@@ -40,10 +38,18 @@ func connectToWebsocket(receiveChannel chan bool, wsOpenChannel chan bool) {
 
 // Creates a lot of websocket connections to the server
 func main() {
+	// Parse command line args
+	host := flag.String("host", "localhost", "Host of OpenSlides daphne server")
+	port := flag.Int("port", 8000, "Port of OpenSlides daphne server")
+	flag.Parse()
+
+	// Connect to server via websocket
+	url := fmt.Sprintf("ws://%s:%d/ws/site/", *host, *port)
 	receiveChannel := make(chan bool, wsClientCount)
 	wsOpenChannel := make(chan bool, wsClientCount)
+	fmt.Printf("Try to connect to %s ... ", url)
 	for i := 0; i < wsClientCount; i++ {
-		go connectToWebsocket(receiveChannel, wsOpenChannel)
+		go connectToWebsocket(url, receiveChannel, wsOpenChannel)
 	}
 
 	wsOpenCounter := 0
@@ -58,7 +64,7 @@ func main() {
 		case <-wsOpenChannel:
 			wsOpenCounter++
 			if wsOpenCounter >= wsClientCount {
-				fmt.Println("All clients are connected")
+				fmt.Println("done.")
 			}
 		case <-receiveChannel:
 			receiveCounter++
