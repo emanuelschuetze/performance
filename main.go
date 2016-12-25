@@ -92,14 +92,16 @@ func getWebsocketUrl(port int) string {
 	return fmt.Sprintf("ws://%s:%d%s", hostFlag, port, path)
 }
 
-func getLoginUrl(port int) string {
-	return fmt.Sprintf("http://%s:%d/users/login/", hostFlag, port)
+// getLoginUrl returns the url for login. When more then one port was specified
+// this function will only use the first port.
+func getLoginUrl() string {
+	return fmt.Sprintf("http://%s:%d/users/login/", hostFlag, portsFlag[0])
 }
 
 // Logs in with a specific username and password. Returns a session id
-func login(port int, username, password string, retry int) (cookie string, err error) {
+func login(username, password string, retry int) (cookie string, err error) {
 	resp, err := http.Post(
-		getLoginUrl(port),
+		getLoginUrl(),
 		"application/json",
 		strings.NewReader(fmt.Sprintf(
 			"{\"username\": \"%s\", \"password\": \"%s\"}",
@@ -112,7 +114,7 @@ func login(port int, username, password string, retry int) (cookie string, err e
 
 	if resp.StatusCode >= 500 && resp.StatusCode < 600 && retry > 0 {
 		// If the error is on the server side, then retry
-		return login(port, username, password, retry-1)
+		return login(username, password, retry-1)
 	}
 
 	if resp.StatusCode != 200 {
@@ -154,7 +156,18 @@ func main() {
 	var err error
 	receiveChannel := make(chan bool, clientsFlag)
 	wsOpenChannel := make(chan bool, clientsFlag)
-	fmt.Printf("Try to connect %d clients to %s\n", clientsFlag, getWebsocketUrl(portsFlag[0]))
+	if len(portsFlag) == 1 {
+		fmt.Printf("Try to connect %d clients to %s\n", clientsFlag, getWebsocketUrl(portsFlag[0]))
+	} else {
+		fmt.Println("Try to connect:")
+		for i, port := range portsFlag {
+			clientCount := clientsFlag / len(portsFlag)
+			if clientsFlag%len(portsFlag) > i {
+				clientCount++
+			}
+			fmt.Printf("\t%d clients to %s\n", clientCount, getWebsocketUrl(port))
+		}
+	}
 
 	// Create a sessionId. If username is empty (use anonymous) then we need no
 	// login at all. If it contains the placeholder %i then we can not use a global
@@ -162,19 +175,22 @@ func main() {
 	if strings.Contains(usernameFlag, "%i") || usernameFlag == "" {
 		sessionId = ""
 	} else {
-		sessionId, err = login(portsFlag[0], usernameFlag, passwordFlag, 3)
+		sessionId, err = login(usernameFlag, passwordFlag, 3)
 		if err != nil {
 			log.Fatal("Login error: ", err)
 		}
 	}
 	for i := 0; i < clientsFlag; i++ {
-		go func(sessionId string, clientCount int) {
+		// Connect to the websocket in a different goroutine.
+		// If the placeholder is used in the username, then an individualy session
+		// will be created for each connection.
+		// If more then one port was given, the connections will be spread.
+		go func(sessionId string, clientCount int, port int) {
 			if sessionId == "" && usernameFlag != "" {
 				// If the sessionId was not set in the lines above but the username
 				// is not empty, then we it contains the placeholder %i and we have to
 				// make the login request for each connection.
 				sessionId, err = login(
-					portsFlag[0], // TODO
 					strings.Replace(usernameFlag, "%i", strconv.Itoa(clientCount+1), 1),
 					strings.Replace(passwordFlag, "%i", strconv.Itoa(clientCount+1), 1),
 					3)
@@ -182,8 +198,8 @@ func main() {
 					log.Fatal("Login error: ", err)
 				}
 			}
-			connectToWebsocket(portsFlag[0], sessionId, receiveChannel, wsOpenChannel)
-		}(sessionId, i)
+			connectToWebsocket(port, sessionId, receiveChannel, wsOpenChannel)
+		}(sessionId, i, portsFlag[i%len(portsFlag)])
 	}
 
 	wsOpenCounter := 0
